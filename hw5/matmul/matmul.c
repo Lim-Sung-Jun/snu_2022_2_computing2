@@ -26,11 +26,6 @@ void matmul(const float *A, const float *B, float *C, int M, int N, int K) {
   int p_M = M;
   int p_N = N;
   int p_K = K;
-  // float *p_a = A;
-  // float *p_b = B;
-  // float *p_c = C;
-  // float *A = A;
-  // float *B = B;
 
   if(M%32 != 0){
     r = 32 - (M-(32*(M/32)));
@@ -50,34 +45,40 @@ void matmul(const float *A, const float *B, float *C, int M, int N, int K) {
   float *A_PAD;
   float *B_PAD;
   float *C_PAD;
-  alloc_mat(&A_PAD, M, K);
-  alloc_mat(&B_PAD, K, N);
   alloc_mat(&C_PAD, M, N);
-  zero_mat(A_PAD, M, K);
-  zero_mat(B_PAD, K, N);
   zero_mat(C_PAD, M, N);
 
-  for(int i = 0; i < M; i++){
-      for(int j = 0; j < K; j++){
-        float value;
-        if(i < p_M && j < p_K){
-          value = A[i*p_K + j];
-        }else{
-          value = 0;
+  if(M%32 != 0 || N%32 !=0 || K%32 != 0 || M != N || M != K || N != K){
+    alloc_mat(&A_PAD, M, K);
+    alloc_mat(&B_PAD, K, N);
+    zero_mat(A_PAD, M, K);
+    zero_mat(B_PAD, K, N);
+
+    for(int i = 0; i < M; i++){
+        for(int j = 0; j < K; j++){
+          float value;
+          if(i < p_M && j < p_K){
+            value = A[i*p_K + j];
+          }else{
+            value = 0;
+          }
+          A_PAD[i*K + j] = value;
         }
-        A_PAD[i*K + j] = value;
-      }
-  }
-  for(int i = 0; i < K; i++){
-      for(int j = 0; j < N; j++){
-        float value;
-        if(i < p_K && j < p_N){
-          value = B[i*p_N + j];
-        }else{
-          value = 0;
+    }
+    for(int i = 0; i < K; i++){
+        for(int j = 0; j < N; j++){
+          float value;
+          if(i < p_K && j < p_N){
+            value = B[i*p_N + j];
+          }else{
+            value = 0;
+          }
+          B_PAD[i*N + j] = value;
         }
-        B_PAD[i*N + j] = value;
-      }
+    }
+  }else{
+    A_PAD= (float*)A;
+    B_PAD= (float*)B;
   }
 
 
