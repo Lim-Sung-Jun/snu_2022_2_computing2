@@ -22,11 +22,71 @@ static cl_kernel kernel;
 static cl_mem a_d, b_d, c_d;
 
 void matmul(const float *A, const float *B, float *C, int M, int N, int K) {
+  int r = 0;
+  int p_M = M;
+  int p_N = N;
+  int p_K = K;
+  // float *p_a = A;
+  // float *p_b = B;
+  // float *p_c = C;
+  // float *A = A;
+  // float *B = B;
+
+  if(M%32 != 0){
+    r = 32 - (M-(32*(M/32)));
+    M = M + r;
+  }
+
+  if(N%32 != 0){
+    r = 32 - (N-(32*(N/32)));
+    N = N + r;
+  }
+
+  if(K%32 != 0){
+    r = 32 - (K-(32*(K/32)));
+    K = K + r;
+  }
+
+  float *A_PAD;
+  float *B_PAD;
+  float *C_PAD;
+  alloc_mat(&A_PAD, M, K);
+  alloc_mat(&B_PAD, K, N);
+  alloc_mat(&C_PAD, M, N);
+  zero_mat(A_PAD, M, K);
+  zero_mat(B_PAD, K, N);
+  zero_mat(C_PAD, M, N);
+
+  for(int i = 0; i < M; i++){
+      for(int j = 0; j < K; j++){
+        float value;
+        if(i < p_M && j < p_K){
+          value = A[i*p_K + j];
+        }else{
+          value = 0;
+        }
+        A_PAD[i*K + j] = value;
+      }
+  }
+  for(int i = 0; i < K; i++){
+      for(int j = 0; j < N; j++){
+        float value;
+        if(i < p_K && j < p_N){
+          value = B[i*p_N + j];
+        }else{
+          value = 0;
+        }
+        B_PAD[i*N + j] = value;
+      }
+  }
+
+
+
   // Write to GPU; A (cpu) -> a_d (gpu), B (cpu) -> b_d (gpu)
-  err = clEnqueueWriteBuffer(queue, a_d, CL_TRUE, 0, M * K * sizeof(float), A,
+  err = clEnqueueWriteBuffer(queue, a_d, CL_TRUE, 0, M * K * sizeof(float), A_PAD, // h_a, h_b? oo
                              0, NULL, NULL);
   CHECK_ERROR(err);
-  err = clEnqueueWriteBuffer(queue, b_d, CL_TRUE, 0, K * N * sizeof(float), B,
+  err = clEnqueueWriteBuffer(queue, b_d, CL_TRUE, 0, K * N * sizeof(float), B_PAD,
                              0, NULL, NULL);
   CHECK_ERROR(err);
   
@@ -47,8 +107,8 @@ void matmul(const float *A, const float *B, float *C, int M, int N, int K) {
   err = clSetKernelArg(kernel, 5, sizeof(int), &K);
   CHECK_ERROR(err);
 
-  // Setup global work size and local work size
-  size_t gws[2] = {(size_t)M, (size_t)N}, lws[2] = {1, 1};
+  // Setup global work size and local work size // when we set the global work size as below code line, then we can allocate each kernel to thread.
+  size_t gws[2] = {(size_t)M, (size_t)N/8}, lws[2] = {32, 32/8}; // local size is too small i think
   for (int i = 0; i < 2; ++i) {
     // By OpenCL spec, global work size should be MULTIPLE of local work size
     // e.g., gws = 25, lws = 16, then (25 + 16 - 1) / 16 * 16 = 40 / 16 * 16 = 2
@@ -56,17 +116,27 @@ void matmul(const float *A, const float *B, float *C, int M, int N, int K) {
     gws[i] = (gws[i] + lws[i] - 1) / lws[i] * lws[i];
   }
 
-  // Run kernel
-  err = clEnqueueNDRangeKernel(queue, kernel, 2, NULL, gws, lws, 0, NULL, NULL);
+  // Run kernel // kernel index space will be set in here
+  // input padding kernel
+  err = clEnqueueNDRangeKernel(queue, kernel, 2, NULL, gws, lws, 0, NULL, NULL); // Enqueues a command to execute a kernel on a device.
+  // output padding kernel
   CHECK_ERROR(err);
 
   err = clFinish(queue);
   CHECK_ERROR(err);
 
   // Read from GPU; c_d (gpu) -> C (cpu)
-  err = clEnqueueReadBuffer(queue, c_d, CL_TRUE, 0, M * N * sizeof(float), C, 0,
+  err = clEnqueueReadBuffer(queue, c_d, CL_TRUE, 0, M * N * sizeof(float), C_PAD, 0,
                             NULL, NULL);
   CHECK_ERROR(err);
+
+  for(int i = 0; i < M; i++){
+      for(int j = 0; j < N; j++){
+        if(i < p_M && j < p_N){
+          C[i*p_N + j] = C_PAD[i*N + j];
+        }
+      }
+  }
 
   // DO NOT REMOVE; NEEDED FOR TIME MEASURE
   err = clFinish(queue);
@@ -93,6 +163,7 @@ static void print_device_info(cl_device_id device) {
   free(buf);
 }
 
+// pass
 static cl_program create_and_build_program_with_source(cl_context context,
                                                        cl_device_id device,
                                                        const char *file_name) {
@@ -133,26 +204,44 @@ static cl_program create_and_build_program_with_source(cl_context context,
 }
 
 void matmul_initialize(int M, int N, int K) {
+  int r = 0;
+  if(M%32 != 0){
+    r = 32 - (M-(32*(M/32)));
+    M = M + r;
+  }
+
+  if(N%32 != 0){
+    r = 32 - (N-(32*(N/32)));
+    N = N + r;
+  }
+
+  if(K%32 != 0){
+    r = 32 - (K-(32*(K/32)));
+    K = K + r;
+  }
+
   // Get OpenCL platform
-  err = clGetPlatformIDs(1, &platform, NULL);
+  err = clGetPlatformIDs(1, &platform, NULL); // obtain the list of platforms available, The number of cl_platform_id entries 
   CHECK_ERROR(err);
   print_platform_info(platform);
 
   // Get OpenCL device (only 1)
-  err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+  err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL); // Obtain the list of devices available on a platform, gpu type
   CHECK_ERROR(err);
   print_device_info(device);
 
   // Create OpenCL context
-  context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
+  context = clCreateContext(NULL, 1, &device, NULL, NULL, &err); // obtain context
   CHECK_ERROR(err);
 
   // Create OpenCL command queue
-  queue = clCreateCommandQueue(context, device, 0, &err);
+  queue = clCreateCommandQueue(context, device, 0, &err); // obtain command queue
   CHECK_ERROR(err);
 
   // Compile program from "kernel.cl"
-  program = create_and_build_program_with_source(context, device, "kernel.cl");
+  program = create_and_build_program_with_source(context, device, "kernel.cl"); // program with kernel
+  // input padding kernel
+  // output padding kernel
 
   // Extract kernel from compiled program
   kernel = clCreateKernel(program, "sgemm", &err);
