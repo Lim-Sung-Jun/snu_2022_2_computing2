@@ -48,3 +48,4 @@ __kernel void sgemm(__global float8 *A, __global float8 *B, __global float8 *C, 
   }
    C[global_row*(N/VECTOR_WIDTH) + global_col] = inter_value;
 }
+

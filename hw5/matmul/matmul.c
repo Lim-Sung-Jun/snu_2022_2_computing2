@@ -110,6 +110,7 @@ void matmul(const float *A, const float *B, float *C, int M, int N, int K) {
 
   // Setup global work size and local work size // when we set the global work size as below code line, then we can allocate each kernel to thread.
   size_t gws[2] = {(size_t)M, (size_t)N/8}, lws[2] = {32, 32/8}; // local size is too small i think
+  // size_t gws[2] = {(size_t)M, (size_t)N}, lws[2] = {32,32};
   for (int i = 0; i < 2; ++i) {
     // By OpenCL spec, global work size should be MULTIPLE of local work size
     // e.g., gws = 25, lws = 16, then (25 + 16 - 1) / 16 * 16 = 40 / 16 * 16 = 2

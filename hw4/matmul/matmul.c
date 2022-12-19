@@ -46,12 +46,14 @@ void matmul(const float *A, const float *B, float *C, int M, int N, int K,
       }
 
     }
+
+    //
   }  
   else if(mpi_rank != 0)// interval * (N + 1)
   {
     MPI_Bcast(A,M*K,MPI_FLOAT,0,MPI_COMM_WORLD);
     MPI_Bcast(B,K*N,MPI_FLOAT,0,MPI_COMM_WORLD);
-
+    //
     for (int k=0; k<K; k++){
       #pragma omp parallel for
       for (int i=mpi_rank * interval; i< mpi_rank * interval + interval; i++) {
@@ -61,6 +63,7 @@ void matmul(const float *A, const float *B, float *C, int M, int N, int K,
           }
       }
     }
+    //
 		MPI_Send(C + mpi_rank * N * interval, interval * N, MPI_FLOAT, 0, mpi_rank, MPI_COMM_WORLD);
   }
 }
